@@ -42,9 +42,8 @@ class BitcoinData:
             self.logger.addHandler(handler)
             self.logger.setLevel(logging.INFO)
 
-
     def fetch_30m_data(self, live=False) -> pd.DataFrame:
-        """Fetch 30-minute data from file or Binance API"""
+        """Fetch 30-minute data from file or Binance API with pagination to get full history"""
         if os.path.exists(self.csv_30m) and not live:
             self.logger.info(f"Loading 30m data from {self.csv_30m}")
             return self._read_csv_with_numeric(self.csv_30m)
@@ -53,18 +52,55 @@ class BitcoinData:
         try:
             # Calculate start time in milliseconds
             start_time = None
+            lookback_candles = Config.LOOKBACK_30M_CANDLES
             if hasattr(Config, 'LOOKBACK_30M_CANDLES'):
-                start_time = int((datetime.now().timestamp() - (Config.LOOKBACK_30M_CANDLES * 30 * 60)) * 1000)
+                start_time = int((datetime.now().timestamp() - (lookback_candles * 30 * 60)) * 1000)
 
-            # Binance kline data - 30 minute intervals
-            klines = self.client.klines(
-                symbol="BTCUSDT",
-                interval="30m",
-                limit=1000,
-                startTime=start_time
-            )
+            # For storing all collected klines
+            all_klines = []
+            current_start_time = start_time
 
-            df = pd.DataFrame(klines, columns=[
+            # Maximum number of candles we want to collect
+            remaining_candles = lookback_candles
+
+            # Binance API has a limit of 1000 per request, so we need to paginate
+            while remaining_candles > 0:
+                max_limit = min(1000, remaining_candles)  # Don't request more than we need
+
+                # Binance kline data - 30 minute intervals
+                klines = self.client.klines(
+                    symbol="BTCUSDT",
+                    interval="30m",
+                    limit=max_limit,
+                    startTime=current_start_time
+                )
+
+                # Break if no more data
+                if not klines:
+                    break
+
+                all_klines.extend(klines)
+                self.logger.info(f"Fetched batch of {len(klines)} 30m candles, total so far: {len(all_klines)}")
+
+                # Update parameters for next request
+                remaining_candles -= len(klines)
+
+                # If we didn't get as many as we asked for, we're done
+                if len(klines) < max_limit:
+                    break
+
+                # Update the start time for the next batch (add 1ms to avoid duplicates)
+                current_start_time = int(klines[-1][0]) + 1
+
+            # Process the collected data
+            if not all_klines:
+                self.logger.warning("No data received from Binance API")
+                if os.path.exists(self.csv_30m):
+                    self.logger.info(f"Using existing {self.csv_30m} as fallback")
+                    return self._read_csv_with_numeric(self.csv_30m)
+                raise Exception("No data received from Binance API")
+
+            df = pd.DataFrame(all_klines, columns=[
                 'timestamp', 'open', 'high', 'low', 'close', 'volume',
                 'close_time', 'quote_asset_volume', 'number_of_trades',
                 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
@@ -98,7 +134,6 @@ class BitcoinData:
                 self.logger.info(f"Using existing {self.csv_30m} as fallback")
                 return self._read_csv_with_numeric(self.csv_30m)
             raise
-
     def fetch_open_interest(self, live=False) -> pd.DataFrame:
         """Fetch open interest data from file or Binance API"""
         if os.path.exists(self.csv_oi) and not live:
