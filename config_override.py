@@ -23,9 +23,9 @@ try:
     orig_daily = Config.LOOKBACK_DAILY_CANDLES
 
     # Increase lookback values to get more data
-    Config.LOOKBACK_30M_CANDLES = 5000  # Increased from 13000 to capture more data
-    Config.LOOKBACK_4H_CANDLES = 625  # Approximately (5000 * 30min) / 240min = 625 4h candles
-    Config.LOOKBACK_DAILY_CANDLES = 150  # Approximately (5000 * 30min) / 1440min = 104 daily candles
+    Config.LOOKBACK_30M_CANDLES = 13000  # Increased from 13000 to capture more data
+    Config.LOOKBACK_4H_CANDLES = 1625  # Approximately (5000 * 30min) / 240min = 625 4h candles
+    Config.LOOKBACK_DAILY_CANDLES = 270  # Approximately (5000 * 30min) / 1440min = 104 daily candles
 
     logger.info(f"Updated Config.LOOKBACK_30M_CANDLES: {orig_30m} -> {Config.LOOKBACK_30M_CANDLES}")
     logger.info(f"Updated Config.LOOKBACK_4H_CANDLES: {orig_4h} -> {Config.LOOKBACK_4H_CANDLES}")
