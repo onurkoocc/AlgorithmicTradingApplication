@@ -27,7 +27,7 @@ class EnhancedCryptoTradingSystem:
 
         # Update Config for more data
         from config import Config
-        Config.LOOKBACK_30M_CANDLES = 5000  # Increased to get more historical data
+        Config.LOOKBACK_30M_CANDLES = 13000  # Increased to get more historical data
 
         # Data components with Binance integration and OI/funding rate data
         self.data_fetcher = BitcoinData(

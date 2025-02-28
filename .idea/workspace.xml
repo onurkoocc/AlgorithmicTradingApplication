@@ -4,10 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="663b4119-c6a5-42f4-9da6-acdb3beb9cd2" name="Changes" comment="first commit">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/data_manager.py" afterDir="false" />
-    </list>
+    <list default="true" id="663b4119-c6a5-42f4-9da6-acdb3beb9cd2" name="Changes" comment="change lookback candles" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -223,7 +220,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1740773844566</updated>
-      <workItem from="1740773845605" duration="8734000" />
+      <workItem from="1740773845605" duration="9051000" />
     </task>
     <task id="LOCAL-00001" summary="first commit">
       <option name="closed" value="true" />
@@ -233,7 +230,23 @@
       <option name="project" value="LOCAL" />
       <updated>1740781023973</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="fix pagination problem">
+      <option name="closed" value="true" />
+      <created>1740783184670</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1740783184670</updated>
+    </task>
+    <task id="LOCAL-00003" summary="change lookback candles">
+      <option name="closed" value="true" />
+      <created>1740783298340</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1740783298340</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -241,6 +254,8 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="first commit" />
-    <option name="LAST_COMMIT_MESSAGE" value="first commit" />
+    <MESSAGE value="fix pagination problem" />
+    <MESSAGE value="change lookback candles" />
+    <option name="LAST_COMMIT_MESSAGE" value="change lookback candles" />
   </component>
 </project>
