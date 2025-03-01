@@ -11,14 +11,10 @@ from tensorflow.python.keras.backend import clear_session
 # ENVIRONMENT SETUP & GLOBAL CONFIGURATIONS
 ###############################################################################
 class Config:
-    # We only need to specify lookback for 30m data now,
-    # as others are derived from this
-    LOOKBACK_30M_CANDLES = 13000
-
-    # We'll keep these for compatibility with existing code
-    # but they're derived from 30m data so we can adjust them as needed
-    LOOKBACK_4H_CANDLES = 2000  # Approximately (7000 * 30min) / 240min = 875 4h candles
-    LOOKBACK_DAILY_CANDLES = 300  # Approximately (7000 * 30min) / 1440min = 146 daily candles
+    # Optimized lookback periods balancing data needs and memory usage
+    LOOKBACK_30M_CANDLES = 10000  # Reduced from 13000 to improve performance
+    LOOKBACK_4H_CANDLES = 1500  # Derived from 30m data
+    LOOKBACK_DAILY_CANDLES = 250  # Derived from 30m data
 
 
 def setup_tensorflow_optimization():
@@ -29,44 +25,31 @@ def setup_tensorflow_optimization():
         for device in physical_devices:
             tf.config.experimental.set_memory_growth(device, True)
 
-        # Set memory limit to 5GB to avoid OOM errors
+        # Increase memory limit to 6GB for RTX 4070 (out of 8GB)
         tf.config.set_logical_device_configuration(
             physical_devices[0],
-            [tf.config.LogicalDeviceConfiguration(memory_limit=5120)]
+            [tf.config.LogicalDeviceConfiguration(memory_limit=6144)]
         )
-        print(f"GPU memory limited to 5GB on {physical_devices[0].name}")
+        print(f"GPU memory limited to 6GB on {physical_devices[0].name}")
 
-    # Try to set mixed precision policy with appropriate error handling
+    # Enable mixed precision for RTX 4070
     try:
-        # Check if mixed_precision is available as a direct attribute
-        if hasattr(tf.config, 'mixed_precision'):
-            tf.config.mixed_precision.set_global_policy("mixed_float16")
-        # Alternative approach in newer TensorFlow versions
-        elif hasattr(tf, 'keras'):
-            try:
-                from tensorflow.keras.mixed_precision import set_global_policy
-                set_global_policy('mixed_float16')
-            except (ImportError, AttributeError):
-                # If still not available, try another approach for newer TF versions
-                try:
-                    from tensorflow.keras import mixed_precision
-                    mixed_precision.set_global_policy('mixed_float16')
-                except (ImportError, AttributeError):
-                    print("Warning: Could not set mixed precision policy. Continuing without it.")
-        else:
-            print("Warning: Mixed precision not available in this TensorFlow version. Continuing without it.")
+        from tensorflow.keras.mixed_precision import set_global_policy
+        set_global_policy('mixed_float16')
+        print("Enabled mixed precision (float16) for faster computation")
     except Exception as e:
-        print(f"Warning: Could not set mixed precision policy: {e}. Continuing without it.")
+        print(f"Warning: Could not set mixed precision: {e}. Continuing without it.")
 
-    # Set optimal thread count
+    # Optimize thread count for Intel Core Ultra 7 155H (16C/22T)
     tf.config.threading.set_intra_op_parallelism_threads(14)
-    tf.config.threading.set_inter_op_parallelism_threads(1)
+    tf.config.threading.set_inter_op_parallelism_threads(2)
 
     # Enable XLA JIT compilation
     try:
         tf.config.optimizer.set_jit(True)
+        print("Enabled XLA JIT compilation for faster training")
     except AttributeError:
-        print("Warning: XLA JIT compilation not available in this TensorFlow version. Continuing without it.")
+        print("Warning: XLA JIT compilation not available. Continuing without it.")
 
     return True
 
@@ -83,25 +66,29 @@ def clear_memory():
     return True
 
 
-def start_memory_monitor():
-    """Start memory monitoring in background"""
-    subprocess.Popen(["python3", "memory_monitor.py"])
+def start_unified_monitor():
+    """Start unified monitoring in background"""
+    subprocess.Popen(["python3", "unified_monitor.py"])
     return True
 
 
-def start_temperature_monitor():
-    """Start temperature monitoring in background"""
-    subprocess.Popen(["python3", "temperature_monitor.py"])
-    return True
+def memory_watchdog(threshold_gb=40, force_cleanup=False):
+    """Monitor memory usage and clear if threshold exceeded or explicitly forced
 
-
-def memory_watchdog(threshold_gb=16, force_cleanup=False):
-    """Monitor memory usage and clear if threshold exceeded or explicitly forced"""
+    Increased threshold for your 64GB system while leaving enough memory for OS and other apps
+    """
     memory_gb = log_memory_usage()
+
+    # Check for throttle request due to high temperature
+    if os.path.exists("throttle_request"):
+        print("WARNING: Temperature throttling requested. Forcing memory cleanup...")
+        os.remove("throttle_request")  # Remove the request file
+        force_cleanup = True
 
     # Only clean up if memory usage is actually high or explicitly forced
     if force_cleanup or (memory_gb > 0.8 * threshold_gb and memory_gb > 2.0):
-        print(f"WARNING: Memory usage ({memory_gb:.2f}GB) exceeded {0.8 * threshold_gb:.2f}GB threshold. Clearing memory...")
+        print(
+            f"WARNING: Memory usage ({memory_gb:.2f}GB) exceeded {0.8 * threshold_gb:.2f}GB threshold. Clearing memory...")
         clear_memory()
         return True
 

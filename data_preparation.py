@@ -9,8 +9,8 @@ from gc import collect
 # DATA PREPARATION & SEQUENCE BUILDING
 ###############################################################################
 class CryptoDataPreparer:
-    def __init__(self, sequence_length=144, horizon=48, normalize_method='zscore', price_column='close',
-                 train_ratio=0.8):
+    def __init__(self, sequence_length=48, horizon=16, normalize_method='zscore', price_column='close',
+                 train_ratio=0.7):
         self.sequence_length = sequence_length
         self.horizon = horizon
         self.normalize_method = normalize_method

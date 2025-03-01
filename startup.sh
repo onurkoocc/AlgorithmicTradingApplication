@@ -18,8 +18,7 @@ python3 -c "import tensorflow as tf; physical_devices = tf.config.list_physical_
 
 # Start monitors in background
 echo "Starting monitoring services..."
-python3 memory_monitor.py &
-python3 temperature_monitor.py &
+python3 monitor.py
 
 # Wait for monitoring services to initialize
 sleep 3

@@ -37,10 +37,10 @@ class AdvancedRiskManager:
             'returns': []
         }
 
-    def calculate_position_size(self, signal, entry_price, stop_loss, volatility_regime=0):
+    # Update to AdvancedRiskManager's calculate_position_size method
+    def calculate_position_size(self, signal, entry_price, stop_loss, volatility_regime=0, funding_rate=0):
         """
-        Calculate optimal position size based on risk parameters, recent performance,
-        and market volatility
+        Calculate optimal position size with funding rate and volatility considerations
         """
         if entry_price == stop_loss:
             return 0
@@ -53,7 +53,7 @@ class AdvancedRiskManager:
             recent_trades = self.trade_history[-10:]
             win_rate = sum(1 for t in recent_trades if t['pnl'] > 0) / len(recent_trades)
 
-            # Reduce risk after consecutive losses
+            # Reduce risk after consecutive losses for drawdown protection
             consecutive_losses = 0
             for trade in reversed(recent_trades):
                 if trade['pnl'] < 0:
@@ -61,7 +61,7 @@ class AdvancedRiskManager:
                 else:
                     break
 
-            # Adjust risk based on recent performance
+            # Implement Kelly-inspired position sizing based on win rate
             if consecutive_losses >= 3:
                 base_risk_pct *= 0.5  # Cut risk by half after 3 consecutive losses
             elif win_rate < 0.4:
@@ -69,14 +69,37 @@ class AdvancedRiskManager:
             elif win_rate > 0.6:
                 base_risk_pct *= 1.2  # Increase risk on high win rate, but don't exceed maximum
 
-        # Volatility scaling (reduce size in high vol, increase in low vol)
+        # Volatility scaling (critical for changing market conditions)
         if self.volatility_scaling:
             vol_factor = 1.0
-            if volatility_regime > 0:  # High volatility
+            if volatility_regime > 0:  # High volatility - reduce size
                 vol_factor = 0.7
-            elif volatility_regime < 0:  # Low volatility
+            elif volatility_regime < 0:  # Low volatility - increase size
                 vol_factor = 1.3
             base_risk_pct *= vol_factor
+
+        # Funding rate adjustment - one of the key advantages in futures trading
+        funding_factor = 1.0
+        direction = 'long' if signal.get('signal_type', '').startswith('Buy') else 'short'
+
+        # Funding rate creates a natural skew in expected returns:
+        # - Negative funding: Shorts pay longs (favorable for longs)
+        # - Positive funding: Longs pay shorts (favorable for shorts)
+        if abs(funding_rate) > 0.0005:  # Significant funding rate
+            if direction == 'long' and funding_rate < 0:
+                # Negative funding rate favors longs (shorts pay longs)
+                funding_factor = 1.2  # Increase size by 20%
+            elif direction == 'short' and funding_rate > 0:
+                # Positive funding rate favors shorts (longs pay shorts)
+                funding_factor = 1.2  # Increase size by 20%
+            elif direction == 'long' and funding_rate > 0.001:
+                # High positive funding penalizes longs
+                funding_factor = 0.8  # Decrease size by 20%
+            elif direction == 'short' and funding_rate < -0.001:
+                # High negative funding penalizes shorts
+                funding_factor = 0.8  # Decrease size by 20%
+
+        base_risk_pct *= funding_factor
 
         # Ensure we don't exceed max risk per trade
         risk_pct = min(base_risk_pct, self.max_risk_per_trade)
@@ -110,15 +133,21 @@ class AdvancedRiskManager:
 
         return True, self.max_risk_per_trade
 
-    def dynamic_exit_strategy(self, position, current_price, current_atr):
+    def dynamic_exit_strategy(self, position, current_price, current_atr, funding_rate=0):
         """
-        Implement dynamic exit strategy with trailing stops and partial exits
+        Implement significantly improved exit strategy with partial profits
+
+        Key improvements:
+        1. Tiered take-profit levels with progressive exits
+        2. Dynamic trailing stop based on price movement
+        3. Funding rate considerations for timing exits
+        4. Volatility-adjusted stop distances
         """
         # Extract position details
         entry_price = position['entry_price']
         direction = position['direction']
         initial_stop = position['stop_loss']
-        take_profit = position['take_profit']
+        take_profit = position.get('take_profit', None)
 
         # Calculate current profit/loss
         if direction == 'long':
@@ -126,56 +155,133 @@ class AdvancedRiskManager:
         else:
             pnl_pct = (entry_price - current_price) / entry_price
 
-        # Determine trailing stop parameters
+        # Determine trailing stop parameters based on ATR
         atr_multiple = 2.0  # Base ATR multiple for trailing stop
 
-        # Rules for trailing stop adjustment
+        # Rules for exit management
         if direction == 'long':
             # For long positions
-            if current_price > entry_price * 1.02:  # If 2% or more in profit
-                # Trail with ATR-based stop
-                new_stop = current_price - (atr_multiple * current_atr)
 
-                # Only move stop if it would move it higher
+            # Scenario 1: Small Profit (1%)
+            # Take partial profit and keep position open
+            if current_price >= entry_price * 1.01 and not position.get('partial_exit_1', False):
+                return {
+                    "partial_exit": True,
+                    "exit_ratio": 0.25,  # Exit 25% of position
+                    "reason": "FirstTarget",
+                    "update_stop": True,
+                    "new_stop": max(initial_stop, entry_price * 0.997)  # Move stop to -0.3% of entry
+                }
+
+            # Scenario 2: Medium Profit (2%)
+            # Take more profit and tighten stop
+            if current_price >= entry_price * 1.02 and not position.get('partial_exit_2', False):
+                return {
+                    "partial_exit": True,
+                    "exit_ratio": 0.33,  # Exit 33% of remaining position
+                    "reason": "SecondTarget",
+                    "update_stop": True,
+                    "new_stop": entry_price  # Move stop to breakeven
+                }
+
+            # Scenario 3: Good Profit (3%)
+            # Take more profit and trail stop tightly
+            if current_price >= entry_price * 1.03 and not position.get('partial_exit_3', False):
+                return {
+                    "partial_exit": True,
+                    "exit_ratio": 0.5,  # Exit 50% of remaining position
+                    "reason": "ThirdTarget",
+                    "update_stop": True,
+                    "new_stop": entry_price * 1.01  # Move stop to +1% profit
+                }
+
+            # Scenario 4: Excellent Profit (4%+)
+            # Exit remaining position or trail very tightly
+            if current_price >= entry_price * 1.04:
+                # Check if funding rate has turned unfavorable for longs
+                if funding_rate > 0.0001:  # Positive funding is unfavorable for longs
+                    return {
+                        "partial_exit": True,
+                        "exit_ratio": 1.0,  # Exit all remaining
+                        "reason": "FundingBasedExit"
+                    }
+                else:
+                    # Otherwise just use a tight trail stop
+                    new_stop = current_price * 0.99  # 1% trailing stop
+                    if new_stop > initial_stop:
+                        return {"update_stop": True, "new_stop": new_stop}
+
+            # Default trailing logic based on ATR
+            if pnl_pct > 0.005:  # If more than 0.5% in profit
+                # Dynamic trailing factor - gets tighter as profit increases
+                trail_factor = min(3.0, 1.0 + (pnl_pct * 10))
+                new_stop = current_price - (atr_multiple / trail_factor * current_atr)
+
+                # Only update if it would move the stop higher
                 if new_stop > initial_stop:
                     return {"update_stop": True, "new_stop": new_stop}
 
-            # First profit target - exit 1/3 position
-            if current_price >= entry_price * 1.02 and not position.get('partial_exit_1'):
-                return {"partial_exit": True, "exit_ratio": 0.33, "reason": "First target"}
+        else:  # Short position logic
+            # For short positions
 
-            # Second profit target - exit another 1/3 and move stop to breakeven
-            if current_price >= entry_price * 1.04 and not position.get('partial_exit_2'):
+            # Scenario 1: Small Profit (1%)
+            # Take partial profit and keep position open
+            if current_price <= entry_price * 0.99 and not position.get('partial_exit_1', False):
                 return {
                     "partial_exit": True,
-                    "exit_ratio": 0.5,  # Half of remaining position
+                    "exit_ratio": 0.25,  # Exit 25% of position
+                    "reason": "FirstTarget",
                     "update_stop": True,
-                    "new_stop": entry_price,
-                    "reason": "Second target"
+                    "new_stop": min(initial_stop, entry_price * 1.003)  # Move stop to +0.3% of entry
                 }
-        else:
-            # For short positions
-            if current_price < entry_price * 0.98:  # If 2% or more in profit
-                # Trail with ATR-based stop
-                new_stop = current_price + (atr_multiple * current_atr)
 
-                # Only move stop if it would move it lower
+            # Scenario 2: Medium Profit (2%)
+            # Take more profit and tighten stop
+            if current_price <= entry_price * 0.98 and not position.get('partial_exit_2', False):
+                return {
+                    "partial_exit": True,
+                    "exit_ratio": 0.33,  # Exit 33% of remaining position
+                    "reason": "SecondTarget",
+                    "update_stop": True,
+                    "new_stop": entry_price  # Move stop to breakeven
+                }
+
+            # Scenario 3: Good Profit (3%)
+            # Take more profit and trail stop tightly
+            if current_price <= entry_price * 0.97 and not position.get('partial_exit_3', False):
+                return {
+                    "partial_exit": True,
+                    "exit_ratio": 0.5,  # Exit 50% of remaining position
+                    "reason": "ThirdTarget",
+                    "update_stop": True,
+                    "new_stop": entry_price * 0.99  # Move stop to +1% profit
+                }
+
+            # Scenario 4: Excellent Profit (4%+)
+            # Exit remaining position or trail very tightly
+            if current_price <= entry_price * 0.96:
+                # Check if funding rate has turned unfavorable for shorts
+                if funding_rate < -0.0001:  # Negative funding is unfavorable for shorts
+                    return {
+                        "partial_exit": True,
+                        "exit_ratio": 1.0,  # Exit all remaining
+                        "reason": "FundingBasedExit"
+                    }
+                else:
+                    # Otherwise just use a tight trail stop
+                    new_stop = current_price * 1.01  # 1% trailing stop
+                    if new_stop < initial_stop:
+                        return {"update_stop": True, "new_stop": new_stop}
+
+            # Default trailing logic based on ATR
+            if pnl_pct > 0.005:  # If more than 0.5% in profit
+                # Dynamic trailing factor - gets tighter as profit increases
+                trail_factor = min(3.0, 1.0 + (pnl_pct * 10))
+                new_stop = current_price + (atr_multiple / trail_factor * current_atr)
+
+                # Only update if it would move the stop lower
                 if new_stop < initial_stop:
                     return {"update_stop": True, "new_stop": new_stop}
-
-            # First profit target - exit 1/3 position
-            if current_price <= entry_price * 0.98 and not position.get('partial_exit_1'):
-                return {"partial_exit": True, "exit_ratio": 0.33, "reason": "First target"}
-
-            # Second profit target - exit another 1/3 and move stop to breakeven
-            if current_price <= entry_price * 0.96 and not position.get('partial_exit_2'):
-                return {
-                    "partial_exit": True,
-                    "exit_ratio": 0.5,  # Half of remaining position
-                    "update_stop": True,
-                    "new_stop": entry_price,
-                    "reason": "Second target"
-                }
 
         # No changes needed
         return {"update_stop": False}
@@ -246,12 +352,16 @@ class EnhancedSignalProducer:
         self.max_vol_percentile = 85  # Avoid trading in extremely high volatility
         self.correlation_threshold = 0.6  # For timeframe agreement
 
-    def get_signal(self, model_probs, df):
-        """Enhanced signal generation with multiple filters"""
+    def get_signal(self, model_probs, df, funding_df=None, oi_df=None):
+        """
+        Enhanced signal generation integrating funding rates and open interest
+
+        This is one of the most critical components for profitability in crypto futures trading
+        """
         if len(df) < 2:
             return {"signal_type": "NoTrade", "reason": "InsufficientData"}
 
-        # Get base probabilities
+        # Get base probabilities from model
         P_positive = model_probs[3] + model_probs[4]  # Classes 3 & 4 = bullish
         P_negative = model_probs[0] + model_probs[1]  # Classes 0 & 1 = bearish
         P_neutral = model_probs[2]  # Class 2 = neutral
@@ -259,67 +369,83 @@ class EnhancedSignalProducer:
 
         # Get current market conditions
         current_price = df['close'].iloc[-1]
+
+        # Get relevant regime indicators if available
         market_regime = df['market_regime'].iloc[-1] if 'market_regime' in df.columns else 0
         volatility_regime = df['volatility_regime'].iloc[-1] if 'volatility_regime' in df.columns else 0
         trend_strength = df['trend_strength'].iloc[-1] if 'trend_strength' in df.columns else 0
 
-        # Check if ATR data exists
+        # Check funding rate features if available (critical for futures)
+        funding_signal = 0
+        if 'funding_extreme_signal' in df.columns:
+            funding_signal = df['funding_extreme_signal'].iloc[-1]
+        elif 'funding_rate' in df.columns:
+            funding_rate = df['funding_rate'].iloc[-1]
+            if funding_rate > 0.0001:  # Positive funding (bearish)
+                funding_signal = -1
+            elif funding_rate < -0.0001:  # Negative funding (bullish)
+                funding_signal = 1
+
+        # Check open interest features if available
+        oi_signal = 0
+        if 'oi_price_sentiment' in df.columns:
+            oi_signal = df['oi_price_sentiment'].iloc[-1]
+
+        # Check if ATR data exists for volatility-based stops
         if 'd1_ATR_14' not in df.columns:
-            return {"signal_type": "NoTrade", "reason": "MissingATRData"}
+            # Fallback method to calculate ATR if not available
+            atr = self._compute_atr(df).iloc[-1]
+        else:
+            atr = df['d1_ATR_14'].iloc[-1]
 
-        # Calculate ATR and volatility metrics
-        atr = self._compute_atr(df).iloc[-1]
-        hist_vol = df['hist_vol_20'].iloc[-1] if 'hist_vol_20' in df.columns else 0
+        # Calculate recent volatility measure
+        hist_vol = df['hist_vol_20'].iloc[-1] if 'hist_vol_20' in df.columns else df['close'].pct_change(20).std()
 
-        # Filter 1: Volatility Filter - avoid extremely high volatility
+        # Combined signal weighting
+        # Base signal from model (60% weight)
+        base_signal = 1 if P_positive > P_negative else (-1 if P_negative > P_positive else 0)
+        combined_signal = base_signal * 0.6
+
+        # External signals (40% total weight)
+        if abs(funding_signal) > 0:
+            combined_signal += funding_signal * 0.2  # Funding signal (20%)
+
+        if abs(market_regime) > 0:
+            combined_signal += market_regime * 0.1  # Market regime (10%)
+
+        if abs(oi_signal) > 0:
+            combined_signal += oi_signal * 0.1  # Open interest signal (10%)
+
+        # Filter 1: Volatility Filter - avoid extremely high volatility periods
         if self.use_volatility_filter:
             if volatility_regime > 0 and hist_vol > np.percentile(df['hist_vol_20'].dropna(), self.max_vol_percentile):
                 return {"signal_type": "NoTrade", "reason": "ExtremeVolatility"}
 
-        # Filter 2: Confidence threshold
+        # Filter 2: Confidence threshold - require minimum confidence
         if max_confidence < self.confidence_threshold:
             return {"signal_type": "NoTrade", "confidence": max_confidence, "reason": "LowConfidence"}
 
         # Filter 3: Trend alignment
-        has_trend_data = 'h4_SMA_50' in df.columns and 'h4_SMA_200' in df.columns and 'h4_ADX' in df.columns
-        if not has_trend_data:
-            return {"signal_type": "NoTrade", "reason": "MissingTrendData"}
+        if self.use_regime_filter and abs(trend_strength) > 0.5:
+            trend_aligned = (trend_strength > 0 and combined_signal > 0) or (trend_strength < 0 and combined_signal < 0)
+            if not trend_aligned:
+                return {"signal_type": "NoTrade", "reason": "TrendMisalignment"}
 
-        trend_up = df['h4_SMA_50'].iloc[-1] > df['h4_SMA_200'].iloc[-1] and df['h4_ADX'].iloc[
-            -1] > self.min_adx_threshold
-        trend_down = df['h4_SMA_50'].iloc[-1] < df['h4_SMA_200'].iloc[-1] and df['h4_ADX'].iloc[
-            -1] > self.min_adx_threshold
-
-        # Filter 4: Market regime filter
-        if self.use_regime_filter:
-            regime_aligned = (market_regime > 0 and P_positive > P_negative) or \
-                             (market_regime < 0 and P_negative > P_positive)
-            if market_regime != 0 and not regime_aligned:
-                return {"signal_type": "NoTrade", "reason": "RegimeMismatch"}
-
-        # Filter 5: Multi-timeframe confirmation
-        # Check for agreement between daily and 4h signals
-        daily_bullish = df['d1_RSI_14'].iloc[-1] > 50 if 'd1_RSI_14' in df.columns else False
-        daily_bearish = df['d1_RSI_14'].iloc[-1] < 50 if 'd1_RSI_14' in df.columns else False
-        h4_bullish = df['h4_RSI_14'].iloc[-1] > 50 if 'h4_RSI_14' in df.columns else False
-        h4_bearish = df['h4_RSI_14'].iloc[-1] < 50 if 'h4_RSI_14' in df.columns else False
-
-        timeframe_agreement_bull = daily_bullish and h4_bullish
-        timeframe_agreement_bear = daily_bearish and h4_bearish
-
-        # Generate signal based on passing all filters
-        if P_positive > P_negative:
+        # Generate trading signals based on combined analysis
+        if combined_signal > 0.2:  # Bullish threshold
             # For long signals
-            if not trend_up and trend_strength <= 0:
-                return {"signal_type": "NoTrade", "reason": "TrendFilter"}
-
-            if not timeframe_agreement_bull:
-                confidence_modifier = 0.8  # Reduce confidence when timeframes don't agree
-                P_positive *= confidence_modifier
-
             # Dynamic stop loss based on volatility
             volatility_factor = 1.0 + (0.5 * volatility_regime)  # Increase for higher volatility
             stop_loss_price = current_price - (self.atr_multiplier_sl * atr * volatility_factor)
+
+            # Calculate take profit levels based on volatility
+            tp_ratio = 2.5  # 2.5:1 reward-to-risk by default
+
+            # Adjust ratio based on funding rate conditions
+            if funding_signal > 0:  # Funding is favorable for longs
+                tp_ratio = 3.0  # Increase reward-to-risk when funding is favorable
+
+            take_profit_price = current_price + (tp_ratio * (current_price - stop_loss_price))
 
             # Determine signal strength
             if P_positive >= self.strong_signal_threshold:
@@ -331,23 +457,26 @@ class EnhancedSignalProducer:
                 "signal_type": signal_str,
                 "confidence": float(P_positive),
                 "stop_loss": round(float(stop_loss_price), 2),
+                "take_profit": round(float(take_profit_price), 2),
                 "regime": int(market_regime),
                 "volatility": float(hist_vol),
-                "timeframe_agreement": timeframe_agreement_bull
+                "funding_signal": funding_signal,
+                "combined_signal": combined_signal
             }
 
-        elif P_negative > P_positive:
+        elif combined_signal < -0.2:  # Bearish threshold
             # For short signals
-            if not trend_down and trend_strength >= 0:
-                return {"signal_type": "NoTrade", "reason": "TrendFilter"}
-
-            if not timeframe_agreement_bear:
-                confidence_modifier = 0.8  # Reduce confidence when timeframes don't agree
-                P_negative *= confidence_modifier
-
-            # Dynamic stop loss based on volatility
             volatility_factor = 1.0 + (0.5 * volatility_regime)  # Increase for higher volatility
             stop_loss_price = current_price + (self.atr_multiplier_sl * atr * volatility_factor)
+
+            # Calculate take profit levels based on volatility
+            tp_ratio = 2.5  # 2.5:1 reward-to-risk by default
+
+            # Adjust ratio based on funding rate conditions
+            if funding_signal < 0:  # Funding is favorable for shorts
+                tp_ratio = 3.0  # Increase reward-to-risk when funding is favorable
+
+            take_profit_price = current_price - (tp_ratio * (stop_loss_price - current_price))
 
             # Determine signal strength
             if P_negative >= self.strong_signal_threshold:
@@ -359,12 +488,14 @@ class EnhancedSignalProducer:
                 "signal_type": signal_str,
                 "confidence": float(P_negative),
                 "stop_loss": round(float(stop_loss_price), 2),
+                "take_profit": round(float(take_profit_price), 2),
                 "regime": int(market_regime),
                 "volatility": float(hist_vol),
-                "timeframe_agreement": timeframe_agreement_bear
+                "funding_signal": funding_signal,
+                "combined_signal": combined_signal
             }
 
-        return {"signal_type": "NoTrade", "reason": "Indecision"}
+        return {"signal_type": "NoTrade", "reason": "InsufficientSignal"}
 
     def _compute_atr(self, df, period=14):
         high_low = df['high'] - df['low']
@@ -923,9 +1054,21 @@ class EnhancedStrategyBacktester:
             return self.risk_manager.initial_capital, []
 
         # Get predictions - handle both ensemble and single model
-        if hasattr(self.modeler, 'predict_with_ensemble'):
-            preds, uncertainties = self.modeler.predict_with_ensemble(X_test)
+        # Check if ensemble models exist and are available
+        has_ensemble = (hasattr(self.modeler, 'predict_with_ensemble') and
+                        hasattr(self.modeler, 'ensemble_models') and
+                        self.modeler.ensemble_models)
+
+        if has_ensemble:
+            self.logger.info("Using ensemble model for predictions")
+            try:
+                preds, uncertainties = self.modeler.predict_with_ensemble(X_test)
+            except Exception as e:
+                self.logger.warning(f"Ensemble prediction failed: {e}, falling back to single model")
+                preds = self.modeler.predict_signals(X_test)
+                uncertainties = None
         else:
+            self.logger.info("Using single model for predictions")
             preds = self.modeler.predict_signals(X_test)
             uncertainties = None
 

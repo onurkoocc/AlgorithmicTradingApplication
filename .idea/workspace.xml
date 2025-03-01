@@ -4,9 +4,19 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="663b4119-c6a5-42f4-9da6-acdb3beb9cd2" name="Changes" comment="change lookback candles-2">
+    <list default="true" id="663b4119-c6a5-42f4-9da6-acdb3beb9cd2" name="Changes" comment="last working commit">
+      <change afterPath="$PROJECT_DIR$/monitor.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/optimal_params.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/data_manager.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data_preparation.py" beforeDir="false" afterPath="$PROJECT_DIR$/data_preparation.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/feature_engineering.py" beforeDir="false" afterPath="$PROJECT_DIR$/feature_engineering.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/memory_monitor.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/model_management.py" beforeDir="false" afterPath="$PROJECT_DIR$/model_management.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/startup.sh" beforeDir="false" afterPath="$PROJECT_DIR$/startup.sh" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/trading_logic.py" beforeDir="false" afterPath="$PROJECT_DIR$/trading_logic.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -83,7 +93,7 @@
       <option name="presentableId" value="Default" />
       <updated>1740773844566</updated>
       <workItem from="1740773845605" duration="12511000" />
-      <workItem from="1740815705848" duration="46000" />
+      <workItem from="1740815705848" duration="5678000" />
     </task>
     <task id="LOCAL-00001" summary="first commit">
       <option name="closed" value="true" />
@@ -117,7 +127,15 @@
       <option name="project" value="LOCAL" />
       <updated>1740783552853</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="last working commit">
+      <option name="closed" value="true" />
+      <created>1740816066211</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1740816066211</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -128,6 +146,7 @@
     <MESSAGE value="fix pagination problem" />
     <MESSAGE value="change lookback candles" />
     <MESSAGE value="change lookback candles-2" />
-    <option name="LAST_COMMIT_MESSAGE" value="change lookback candles-2" />
+    <MESSAGE value="last working commit" />
+    <option name="LAST_COMMIT_MESSAGE" value="last working commit" />
   </component>
 </project>

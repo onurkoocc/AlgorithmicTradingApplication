@@ -50,7 +50,7 @@ class EnhancedCryptoFeatureEngineer:
             self.logger.addHandler(handler)
             self.logger.setLevel(logging.INFO)
 
-    def process_data_3way(self, df_30m, df_4h, df_daily):
+    def process_data_3way(self, df_30m, df_4h, df_daily, oi_df=None, funding_df=None):
         """Process data with more aggressive memory management and better handling of derived timeframes"""
         # Log memory at start
         log_memory_usage()
@@ -78,19 +78,12 @@ class EnhancedCryptoFeatureEngineer:
         gc.collect()
 
         feat_4h = self._compute_indicators_4h(df_4h).add_prefix('h4_')
-
-        # More precise forward fill for derived timeframes
-        # Use nearest-time approach for better alignment with 30m data
         feat_4h_ff = self._align_timeframes(feat_4h, feat_30m.index)
-
-        # Clear unused DataFrames
         del df_4h, feat_4h
         gc.collect()
 
         feat_daily = self._compute_indicators_daily(df_daily).add_prefix('d1_')
         feat_daily_ff = self._align_timeframes(feat_daily, feat_30m.index)
-
-        # Clear unused DataFrames
         del df_daily, feat_daily
         gc.collect()
 
@@ -113,8 +106,7 @@ class EnhancedCryptoFeatureEngineer:
         # Clear unused DataFrames
         del feat_30m, feat_4h_ff, feat_daily_ff
         gc.collect()
-
-        memory_watchdog(threshold_gb=12)
+        memory_watchdog(threshold_gb=20)
 
         # Add enhanced features with improved memory handling
         # Add market regime detection - check for minimum required data
@@ -127,7 +119,25 @@ class EnhancedCryptoFeatureEngineer:
         else:
             combined['market_regime'] = 0
 
-        memory_watchdog(threshold_gb=12)
+        memory_watchdog(threshold_gb=20)
+
+        # Add funding rate features if available
+        if funding_df is not None and not funding_df.empty:
+            try:
+                funding_features = self._compute_funding_rate_features(combined, funding_df)
+                combined = pd.concat([combined, funding_features], axis=1)
+                memory_watchdog(threshold_gb=20)
+            except Exception as e:
+                print(f"WARNING: Error computing funding rate features: {e}")
+
+        # Add open interest features if available
+        if oi_df is not None and not oi_df.empty:
+            try:
+                oi_features = self._compute_open_interest_features(combined, oi_df)
+                combined = pd.concat([combined, oi_features], axis=1)
+                memory_watchdog(threshold_gb=20)
+            except Exception as e:
+                print(f"WARNING: Error computing open interest features: {e}")
 
         # Add volume profile features
         try:
@@ -761,3 +771,146 @@ class EnhancedCryptoFeatureEngineer:
                 trend_strength[i] = 0
 
         return trend_strength
+
+    def _compute_funding_rate_features(self, df, funding_df):
+        """
+        Compute features from funding rates for futures trading profitability
+
+        Funding rates are crucial for BTC futures trading:
+        - Positive funding: Longs pay shorts (bearish indicator)
+        - Negative funding: Shorts pay longs (bullish indicator)
+        - Extreme funding rates often precede price reversals
+        """
+        # Create empty DataFrame with price data index
+        features = pd.DataFrame(index=df.index)
+
+        if funding_df.empty or 'fundingRate' not in funding_df.columns:
+            self.logger.warning("No valid funding rate data available")
+            return features
+
+        # Align funding rate data with price data
+        aligned_funding = self._align_timeframes(funding_df, df.index)
+
+        if 'fundingRate' not in aligned_funding.columns:
+            self.logger.warning("Missing fundingRate column after alignment")
+            return features
+
+        try:
+            # Raw funding rate
+            features['funding_rate'] = aligned_funding['fundingRate']
+
+            # Funding rate momentum (changes)
+            features['funding_rate_change'] = features['funding_rate'].diff()
+            features['funding_rate_change_3'] = features['funding_rate'].diff(3)  # 3-period change
+
+            # Cumulative funding rate over periods (shows sustained pressure)
+            # 3 funding periods = 24 hours (8hr * 3)
+            features['funding_cumulative_24h'] = features['funding_rate'].rolling(3).sum()
+
+            # 9 funding periods = 72 hours (8hr * 9) = 3 days
+            features['funding_cumulative_3d'] = features['funding_rate'].rolling(9).sum()
+
+            # Z-score of funding rate (identifies extremes)
+            # 30 funding periods = 10 days
+            mean_funding = features['funding_rate'].rolling(30).mean()
+            std_funding = features['funding_rate'].rolling(30).std().replace(0, 0.0001)  # Avoid div/0
+            features['funding_zscore'] = (features['funding_rate'] - mean_funding) / std_funding
+
+            # Funding regime identification
+            # -1: Consistently negative (bullish)
+            # 0: Neutral
+            # 1: Consistently positive (bearish)
+            features['funding_regime'] = 0
+            features.loc[features['funding_cumulative_3d'] < -0.001, 'funding_regime'] = -1
+            features.loc[features['funding_cumulative_3d'] > 0.001, 'funding_regime'] = 1
+
+            # Funding rate extreme signal for mean reversion strategies
+            # Extremely positive funding rates often precede downward price movements
+            # Extremely negative funding rates often precede upward price movements
+            features['funding_extreme_signal'] = 0
+            features.loc[features['funding_zscore'] > 2.0, 'funding_extreme_signal'] = -1  # Bearish signal
+            features.loc[features['funding_zscore'] < -2.0, 'funding_extreme_signal'] = 1  # Bullish signal
+
+            # Funding rate divergence from price (powerful signal)
+            # Price rising but funding getting more negative = bullish
+            # Price falling but funding getting more positive = bearish
+            price_change_5d = df['close'].pct_change(15)  # 15 periods = ~5 days
+            funding_direction = np.sign(features['funding_rate'])
+
+            features['funding_divergence'] = 0
+            features.loc[(price_change_5d > 0.05) & (funding_direction < 0), 'funding_divergence'] = 1  # Bullish
+            features.loc[(price_change_5d < -0.05) & (funding_direction > 0), 'funding_divergence'] = -1  # Bearish
+
+            # Funding rate volatility (indicates market uncertainty)
+            features['funding_volatility'] = features['funding_rate'].rolling(9).std()
+
+            # Clean up NaN values
+            features = features.fillna(0)
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error computing funding rate features: {e}")
+            return pd.DataFrame(index=df.index)  # Return empty frame on error
+
+    def _compute_open_interest_features(self, df, oi_df):
+        """
+        Compute features from open interest data for improved market insights
+
+        Open interest (OI) shows the total outstanding contracts:
+        - Rising OI with rising price = strong uptrend
+        - Rising OI with falling price = strong downtrend
+        - Falling OI = trend exhaustion
+        - OI vs. volume reveals market participation dynamics
+        """
+        features = pd.DataFrame(index=df.index)
+
+        if oi_df.empty or 'sumOpenInterest' not in oi_df.columns:
+            self.logger.warning("No valid open interest data available")
+            return features
+
+        # Align OI data with price data
+        aligned_oi = self._align_timeframes(oi_df, df.index)
+
+        if 'sumOpenInterest' not in aligned_oi.columns:
+            self.logger.warning("Missing sumOpenInterest column after alignment")
+            return features
+
+        try:
+            # Raw open interest
+            features['open_interest'] = aligned_oi['sumOpenInterest']
+
+            # Open interest change rates
+            features['oi_change_1p'] = features['open_interest'].pct_change()
+            features['oi_change_4h'] = features['open_interest'].pct_change(8)  # 8 periods = ~4 hours
+            features['oi_change_1d'] = features['open_interest'].pct_change(24)  # 24 periods = ~12 hours
+
+            # Open interest momentum
+            features['oi_momentum'] = features['oi_change_1d'].rolling(3).mean()
+
+            # Open interest to volume ratio (participation ratio)
+            # Higher values indicate more contract holding vs trading (longer-term sentiment)
+            # Lower values indicate more active trading vs holding (shorter-term activity)
+            features['oi_volume_ratio'] = features['open_interest'] / df['volume'].replace(0, np.nan)
+            features['oi_volume_ratio'] = features['oi_volume_ratio'].fillna(0)
+
+            # OI combined with price direction = sentiment
+            # Rising OI + Rising price = strong bullish sentiment
+            # Rising OI + Falling price = strong bearish sentiment
+            price_direction = np.sign(df['close'].pct_change(8))  # 8 periods = ~4 hours
+            oi_direction = np.sign(features['oi_change_4h'])
+
+            features['oi_price_sentiment'] = price_direction * oi_direction
+
+            # OI-based market strength indicator
+            oi_strength = np.abs(features['oi_change_1d'])
+            features['oi_strength'] = oi_strength * price_direction
+
+            # Clean up NaN values
+            features = features.fillna(0)
+
+            return features
+
+        except Exception as e:
+            self.logger.error(f"Error computing open interest features: {e}")
+            return pd.DataFrame(index=df.index)  # Return empty frame on error

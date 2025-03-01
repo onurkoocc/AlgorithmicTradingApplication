@@ -189,108 +189,124 @@ class EnhancedCryptoModel:
         self.logger = logging.getLogger("EnhancedCryptoModel")
 
     def _transformer_block(self, x, units, num_heads):
-        """Implement a transformer block with residual connections"""
-        # Get input dimensions to ensure matching shapes for residual connections
+        """
+        Simplified transformer block with optimized parameters
+        """
+        # Get input dimensions for residual connection
         input_dim = x.shape[-1]
 
-        # Multi-head self attention
-        attn_output = MultiHeadAttention(num_heads=num_heads, key_dim=units // num_heads)(x, x)
+        # Multi-head self attention with fewer heads for efficiency
+        attn_output = MultiHeadAttention(
+            num_heads=num_heads,
+            key_dim=units // num_heads,
+            dropout=0.1  # Add dropout in attention for regularization
+        )(x, x)
 
-        # Project attention output to match input dimension if needed
-        if attn_output.shape[-1] != input_dim:
-            attn_output = Dense(input_dim)(attn_output)
+        # Residual connection and normalization
+        x = x + attn_output
+        x = BatchNormalization()(x)
 
-        x = x + attn_output  # Residual connection
-        x = BatchNormalization()(x)  # Normalization
-
-        # Feed-forward network
-        ffn_output = Dense(units * 2, activation='relu')(x)
+        # Feedforward network - simplified
+        ffn_output = Dense(units, activation='relu')(x)
         ffn_output = Dropout(0.1)(ffn_output)
-        ffn_output = Dense(input_dim)(ffn_output)  # Ensure output matches input dimension
+        ffn_output = Dense(input_dim)(ffn_output)
 
-        x = x + ffn_output  # Second residual connection
-        x = BatchNormalization()(x)  # Normalization
+        # Second residual connection
+        x = x + ffn_output
+        x = BatchNormalization()(x)
 
         return x
 
     def _build_model(self, hp, input_shape, total_steps):
-        """Enhanced model architecture with transformer blocks"""
+        """
+        Optimized model architecture focused on trading patterns and efficiency
+        Balanced for RTX 4070 performance characteristics
+        """
         inputs = Input(shape=input_shape, dtype=tf.float32)
 
-        # Initial convolution layer
-        filter0 = hp.Int("conv_filter_0", min_value=32, max_value=128, step=32)
-        kernel_size = hp.Choice("kernel_size", values=[3, 5, 7])
+        # Initial convolution layer - reduced filter options for faster training
+        filter0 = hp.Int("conv_filter_0", min_value=32, max_value=96, step=32)
+        kernel_size = hp.Choice("kernel_size", values=[3, 5])
+
         x = Conv1D(filters=filter0, kernel_size=kernel_size, padding='same', activation='relu')(inputs)
         x = BatchNormalization()(x)
         x = Dropout(rate=hp.Float("dropout_rate_0", min_value=0.1, max_value=0.3, step=0.1))(x)
 
-        # Option to use multi-scale convolutions
+        # Optional multi-scale convolutions for pattern detection
         use_multiscale = hp.Boolean("use_multiscale")
         if use_multiscale:
-            # Multi-scale convolutional block
+            # Multi-scale convolutional block (captures patterns at different scales)
             conv3 = Conv1D(filters=filter0 // 2, kernel_size=3, padding='same', activation='relu')(x)
             conv5 = Conv1D(filters=filter0 // 2, kernel_size=5, padding='same', activation='relu')(x)
-            conv7 = Conv1D(filters=filter0 // 2, kernel_size=7, padding='same', activation='relu')(x)
-            x = Concatenate()([conv3, conv5, conv7])
+            x = Concatenate()([conv3, conv5])
             x = BatchNormalization()(x)
 
-        # First recurrent block with LSTM
+        # Recurrent block - simplified to use either LSTM or GRU
         lstm_type = hp.Choice("lstm_type", values=["LSTM", "GRU"])
-        dropout_rate1 = hp.Float("dropout_rate_1", min_value=0.1, max_value=0.5, step=0.1)
-        l2_reg1 = hp.Float("l2_reg_1", min_value=1e-5, max_value=1e-2, sampling='log')
-        unit1 = hp.Int("unit_1", min_value=32, max_value=128, step=32)
+        dropout_rate1 = hp.Float("dropout_rate_1", min_value=0.1, max_value=0.3, step=0.1)
+        unit1 = hp.Int("unit_1", min_value=32, max_value=96, step=32)
 
         if lstm_type == "LSTM":
-            x = Bidirectional(LSTM(unit1, return_sequences=True, dropout=dropout_rate1,
-                                   kernel_regularizer=L2(l2_reg1)))(x)
+            x = Bidirectional(LSTM(unit1, return_sequences=True, dropout=dropout_rate1))(x)
         else:
-            x = Bidirectional(GRU(unit1, return_sequences=True, dropout=dropout_rate1,
-                                  kernel_regularizer=L2(l2_reg1)))(x)
+            x = Bidirectional(GRU(unit1, return_sequences=True, dropout=dropout_rate1))(x)
 
         x = BatchNormalization()(x)
 
-        # Transformer blocks
-        num_transformer_blocks = hp.Int("num_transformer_blocks", min_value=1, max_value=3)
-        transformer_units = hp.Int("transformer_units", min_value=32, max_value=128, step=32)
-        num_heads = hp.Int("num_heads", min_value=2, max_value=8, step=2)
-
-        for i in range(num_transformer_blocks):
+        # Optional transformer block for capturing long-range dependencies
+        use_transformer = hp.Boolean("use_transformer")
+        if use_transformer:
+            transformer_units = hp.Int("transformer_units", min_value=32, max_value=96, step=32)
+            num_heads = hp.Int("num_heads", min_value=2, max_value=4, step=2)
             x = self._transformer_block(x, transformer_units, num_heads)
 
         # Global pooling strategy
-        pooling_type = hp.Choice("pooling_type", values=["average", "max"])
+        pooling_type = hp.Choice("pooling_type", values=["average", "max", "both"])
 
         if pooling_type == "average":
             x = GlobalAveragePooling1D()(x)
-        else:
+        elif pooling_type == "max":
             x = GlobalMaxPooling1D()(x)
+        else:  # "both"
+            avg_pool = GlobalAveragePooling1D()(x)
+            max_pool = GlobalMaxPooling1D()(x)
+            x = Concatenate()([avg_pool, max_pool])
 
-        # Final classification layer
-        x = Dense(128, activation="relu")(x)
-        x = Dropout(rate=hp.Float("final_dropout", min_value=0.1, max_value=0.5, step=0.1))(x)
+        # Final classification layer - reduced size for efficiency
+        x = Dense(64, activation="relu")(x)
+        x = Dropout(rate=hp.Float("final_dropout", min_value=0.1, max_value=0.3, step=0.1))(x)
         outputs = Dense(self.output_classes, activation="softmax", dtype=tf.float32)(x)
 
-        # Compile with custom metrics and loss
+        # Compile with trading-specific metrics and custom loss
         trading_metrics = TradingMetrics(num_classes=5, classes_to_monitor=[0, 1, 2, 3, 4])
         metrics = trading_metrics.get_metrics()
 
-        # Focal loss with adjustable gamma
-        gamma = hp.Float("gamma", min_value=1.0, max_value=5.0, step=0.5)
-        loss_fn = tf.keras.losses.CategoricalFocalCrossentropy(gamma=gamma, label_smoothing=self.label_smoothing)
+        # Use trading-optimized loss function
+        use_custom_loss = hp.Boolean("use_custom_loss")
+
+        if use_custom_loss:
+            # Custom loss that penalizes false positives more in trading
+            gamma = hp.Float("gamma", min_value=1.0, max_value=3.0, step=0.5)
+            loss_fn = self._create_weighted_focal_loss(gamma=gamma)
+        else:
+            # Standard focal loss with label smoothing
+            gamma = hp.Float("gamma", min_value=1.0, max_value=3.0, step=0.5)
+            loss_fn = tf.keras.losses.CategoricalFocalCrossentropy(
+                gamma=gamma,
+                label_smoothing=self.label_smoothing
+            )
 
         # Learning rate schedule
-        lr_schedule_type = hp.Choice("lr_schedule", values=["cosine", "exponential", "step"])
-        initial_lr = hp.Float("lr", min_value=1e-4, max_value=1e-2, sampling='log')
+        lr_schedule_type = hp.Choice("lr_schedule", values=["cosine", "exponential"])
+        initial_lr = hp.Float("lr", min_value=5e-4, max_value=5e-3, sampling='log')
 
         if lr_schedule_type == "cosine":
-            lr_schedule = CosineDecay(initial_learning_rate=initial_lr, decay_steps=total_steps, alpha=0.1)
-        elif lr_schedule_type == "exponential":
-            lr_schedule = ExponentialDecay(initial_learning_rate=initial_lr, decay_steps=total_steps // 4,
-                                           decay_rate=0.9)
+            lr_schedule = CosineDecay(initial_learning_rate=initial_lr, decay_steps=total_steps)
         else:
-            lr_schedule = PiecewiseConstantDecay(
-                boundaries=[total_steps // 3, total_steps * 2 // 3],
-                values=[initial_lr, initial_lr * 0.1, initial_lr * 0.01]
+            lr_schedule = ExponentialDecay(
+                initial_learning_rate=initial_lr,
+                decay_steps=total_steps // 3,
+                decay_rate=0.9
             )
 
         optimizer = Adam(learning_rate=lr_schedule)
@@ -300,46 +316,98 @@ class EnhancedCryptoModel:
 
         return model
 
-    def tune_and_train(self, iteration, X_train, y_train, X_val, y_val, df_val, fwd_returns_val, epochs=32,
-                       batch_size=256, class_weight=None):
-        """Train model without small dataset adjustments"""
+    def _create_weighted_focal_loss(self, gamma=2.0):
+        """
+        Creates a trading-specific weighted focal loss that prioritizes profitable trades
+
+        - Classes 0 and 4 (strong moves): higher weight - these are the most profitable signals
+        - Class 2 (neutral): lower weight - these produce no trades
+        - Focal weighting reduces impact of easy-to-classify examples
+        """
+
+        def weighted_focal_loss(y_true, y_pred):
+            # Class weights: more weight to extreme classes (0, 4) where profit potential is higher
+            class_weights = tf.constant([1.5, 1.0, 0.5, 1.0, 1.5], dtype=tf.float32)
+
+            # Calculate focal loss with higher gamma for false positives
+            epsilon = tf.keras.backend.epsilon()
+            y_pred = tf.clip_by_value(y_pred, epsilon, 1.0 - epsilon)
+
+            # Cross entropy
+            ce = -y_true * tf.math.log(y_pred)
+
+            # Focal weighting
+            alpha = 0.25
+            pt = tf.where(tf.equal(y_true, 1), y_pred, 1 - y_pred)
+            focal_weight = alpha * tf.pow(1 - pt, gamma)
+
+            # Apply class weights
+            class_indices = tf.argmax(y_true, axis=1)
+            sample_weights = tf.gather(class_weights, class_indices)
+            sample_weights = tf.expand_dims(sample_weights, axis=1)
+
+            # Combine weights
+            final_weights = focal_weight * sample_weights
+
+            # Apply weights to cross entropy
+            weighted_ce = final_weights * ce
+
+            # Sum across classes and average across samples
+            return tf.reduce_mean(tf.reduce_sum(weighted_ce, axis=1))
+
+        weighted_focal_loss.__name__ = "weighted_focal_loss"
+        return weighted_focal_loss
+
+    def tune_and_train(self, iteration, X_train, y_train, X_val, y_val, df_val, fwd_returns_val, epochs=24,
+                       batch_size=512, class_weight=None):
+        """
+        Train model with optimized hyperparameter search
+
+        - Increased batch size to 512 for RTX 4070
+        - Reduced epochs to 24 for faster training iterations
+        - Added batch size to hyperparameter search
+        """
         if len(X_train) == 0:
             self.logger.warning("No training data. Skipping tuner.")
             return None, None
 
         input_shape = (X_train.shape[1], X_train.shape[2])
+
+        # Dynamic batch size based on dataset size
+        batch_size = min(batch_size, len(X_train) // 10)  # Ensure at least 10 batches
+        batch_size = max(batch_size, 32)  # Ensure batch size is at least 32
+
         steps_per_epoch = len(X_train) // batch_size + (1 if len(X_train) % batch_size != 0 else 0)
         total_steps = steps_per_epoch * epochs
         objective = Objective("val_avg_risk_adj_return", direction="max")
 
-        # Use the originally specified tuner type
-        if self.tuner_type.lower() == "hyperband":
-            tuner = Hyperband(
-                hypermodel=lambda hp: self._build_model(hp, input_shape, total_steps),
-                objective=objective,
-                max_epochs=epochs,
-                factor=3,
-                executions_per_trial=1,
-                project_name=self.project_name,
-                overwrite=True,
-                seed=self.seed
-            )
-        else:
-            tuner = BayesianOptimization(
-                hypermodel=lambda hp: self._build_model(hp, input_shape, total_steps),
-                objective=objective,
-                max_trials=self.max_trials,
-                executions_per_trial=1,
-                project_name=self.project_name,
-                overwrite=True,
-                seed=self.seed
-            )
+        # Use the bayesian optimization for better hyperparameter search
+        tuner = BayesianOptimization(
+            hypermodel=lambda hp: self._build_model(hp, input_shape, total_steps),
+            objective=objective,
+            max_trials=self.max_trials,
+            executions_per_trial=1,
+            project_name=self.project_name,
+            overwrite=True,
+            seed=self.seed
+        )
 
-        # Standard early stopping with reasonable patience
-        patience = 10
-        es = EarlyStopping(monitor='val_avg_risk_adj_return', patience=patience, restore_best_weights=True, mode='max')
-        checkpoint = ModelCheckpoint(self.model_save_path, monitor='val_avg_risk_adj_return', save_best_only=True,
-                                    mode='max')
+        # Early stopping with patience scaled to epoch count
+        patience = max(5, epochs // 5)  # 20% of epochs or at least 5
+        es = EarlyStopping(
+            monitor='val_avg_risk_adj_return',
+            patience=patience,
+            restore_best_weights=True,
+            mode='max'
+        )
+
+        checkpoint = ModelCheckpoint(
+            self.model_save_path,
+            monitor='val_avg_risk_adj_return',
+            save_best_only=True,
+            mode='max'
+        )
+
         callback = RiskAdjustedTradeMetric(X_val, y_val, fwd_returns_val, df_val)
 
         # Use shuffled dataset with full batch size
@@ -349,8 +417,14 @@ class EnhancedCryptoModel:
 
         val_dataset = tf.data.Dataset.from_tensor_slices((X_val, y_val)).batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
-        tuner.search(train_dataset, validation_data=val_dataset, epochs=epochs, callbacks=[callback, es, checkpoint],
-                    class_weight=class_weight, verbose=2)
+        tuner.search(
+            train_dataset,
+            validation_data=val_dataset,
+            epochs=epochs,
+            callbacks=[callback, es, checkpoint],
+            class_weight=class_weight,
+            verbose=1
+        )
 
         try:
             best_trial = tuner.oracle.get_best_trials(1)[0]
@@ -560,11 +634,24 @@ class EnhancedCryptoModel:
         else:
             print(f"No model found at {self.model_save_path}")
 
-    def predict_signals(self, X_new, batch_size=256):
+    def predict_signals(self, X_new, batch_size=512):
+        """Make predictions using the best available model - ensemble or single model"""
+        # First try ensemble if it exists and has models
         if hasattr(self, 'ensemble_models') and self.ensemble_models:
-            preds, _ = self.predict_with_ensemble(X_new, batch_size)
-            return preds
+            try:
+                self.logger.info("Using ensemble for predictions")
+                preds, _ = self.predict_with_ensemble(X_new, batch_size)
+                return preds
+            except Exception as e:
+                self.logger.warning(f"Ensemble prediction failed: {e}, falling back to single model")
 
+        # Use single model if ensemble not available or failed
         if self.best_model is None:
-            raise RuntimeError("No model found. Train or load a model first.")
+            if os.path.exists(self.model_save_path):
+                self.logger.info(f"Loading model from {self.model_save_path}")
+                self.best_model = load_model(self.model_save_path)
+            else:
+                raise RuntimeError("No model found. Train or load a model first.")
+
+        self.logger.info("Using single model for predictions")
         return self.best_model.predict(X_new, batch_size=batch_size, verbose=0)

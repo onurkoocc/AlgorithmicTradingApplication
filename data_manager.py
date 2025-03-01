@@ -21,8 +21,8 @@ class BitcoinData:
         """
         # Initialize UMFutures client for USDT-margined futures
         self.client = UMFutures(
-            key="XW2qoCu1zlZdA8FEW98y7Md55ZtJ7fpaV1un6QkZErMeHIY7VXYAY5J6FonVTUdy",
-            secret="ivuwpI0yYRPRvSrex0IHGLcF4QP6jWTcUMCsWJ0DSQ3retcwOSTcmm9yzB1PFaP2",
+            key=os.getenv("BINANCE_API_KEY", ""),
+            secret=os.getenv("BINANCE_API_SECRET", ""),
             base_url=base_url,
             timeout=timeout
         )

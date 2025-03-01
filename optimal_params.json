@@ -1,0 +1,41 @@
+{
+    "data": {
+        "api_key": "XW2qoCu1zlZdA8FEW98y7Md55ZtJ7fpaV1un6QkZErMeHIY7VXYAY5J6FonVTUdy",
+        "api_secret": "ivuwpI0yYRPRvSrex0IHGLcF4QP6jWTcUMCsWJ0DSQ3retcwOSTcmm9yzB1PFaP2",
+        "csv_30m": "btc_data_30m.csv",
+        "csv_4h": "btc_data_4h.csv",
+        "csv_daily": "btc_data_daily.csv",
+        "csv_oi": "btc_open_interest.csv",
+        "csv_funding": "btc_funding_rates.csv"
+    },
+    "feature_engineering": {
+        "feature_scaling": true
+    },
+    "data_preparation": {
+        "sequence_length": 48,
+        "horizon": 16,
+        "train_ratio": 0.7
+    },
+    "model": {
+        "project_name": "btc_futures_model",
+        "max_trials": 20,
+        "tuner_type": "bayesian",
+        "model_save_path": "best_btc_model.keras",
+        "label_smoothing": 0.1,
+        "ensemble_size": 1
+    },
+    "signal": {
+        "confidence_threshold": 0.42,
+        "strong_signal_threshold": 0.7,
+        "atr_multiplier_sl": 1.8,
+        "use_regime_filter": true,
+        "use_volatility_filter": true
+    },
+    "risk": {
+        "initial_capital": 10000.0,
+        "max_risk_per_trade": 0.02,
+        "max_correlated_exposure": 0.06,
+        "volatility_scaling": true,
+        "target_annual_vol": 0.25
+    }
+}
