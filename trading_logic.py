@@ -473,84 +473,12 @@ class EnhancedStrategyBacktester:
         return True
 
     def walk_forward_backtest(self):
-        """Enhanced walk-forward backtest with improved handling of small datasets"""
-        # Check if we have enough data and adjust window sizes
-        if not self._adjust_window_sizes():
-            return pd.DataFrame()  # Return empty results if insufficient data
-
+        """Enhanced walk-forward backtest optimized for large datasets"""
         start_idx = 0
         df_len = len(self.data_df)
         iteration = 0
 
-        # For very small datasets, switch to a single train/test split
-        if df_len < 200:
-            self.logger.info(
-                f"Very small dataset detected ({df_len} rows). Using single train/test split instead of walk-forward.")
-
-            train_size = self.train_window_size
-            train_end = min(train_size, df_len - 10)  # Ensure at least 10 samples for testing
-            test_end = df_len
-
-            # Get training and testing data
-            df_train = self.data_df.iloc[:train_end].copy()
-            df_test = self.data_df.iloc[train_end:].copy()
-
-            # Detect market regime
-            regime = self._detect_regime(df_train)
-            self.logger.info(f"Detected market regime: {regime}")
-
-            # Store original sequence parameters
-            original_sequence_length = self.preparer.sequence_length
-            original_horizon = self.preparer.horizon
-
-            # For very small datasets, further reduce sequence length and horizon
-            if len(df_train) < 50:
-                # Dramatically reduce parameters for tiny datasets
-                self.preparer.sequence_length = max(2, min(8, len(df_train) // 5))  # Use 20% of train data max
-                self.preparer.horizon = max(1, min(4, len(df_train) // 10))  # Use 10% of train data max
-                self.logger.info(
-                    f"Tiny dataset! Reduced parameters: sequence_length={self.preparer.sequence_length}, horizon={self.preparer.horizon}")
-
-            try:
-                # Prepare data with possibly adjusted parameters
-                X_train, y_train, X_val, y_val, df_val, fwd_returns_val = self.preparer.prepare_data(df_train)
-
-                if len(X_train) == 0:
-                    self.logger.warning(f"No training sequences could be created from {len(df_train)} rows.")
-                    return pd.DataFrame()
-
-                # Train with smaller epochs and batch sizes for small datasets
-                batch_size = min(32, max(4, len(X_train) // 2))  # Adjust batch size based on data size
-                epochs = min(10, max(5, 10 - (200 // max(1, len(X_train)))))  # Fewer epochs for smaller datasets
-
-                self.logger.info(f"Using batch_size={batch_size}, epochs={epochs} for tiny dataset")
-
-                # Train model with simplified parameters
-                self.modeler.tune_and_train(1, X_train, y_train, X_val, y_val, df_val, fwd_returns_val,
-                                            epochs=epochs, batch_size=batch_size, class_weight=None)
-
-                # Run backtest on test set
-                test_eq, test_trades = self._simulate_test(df_test, 1, regime)
-
-                # Create results dataframe
-                results = pd.DataFrame([{
-                    "iteration": 1,
-                    "train_start": 0,
-                    "train_end": train_end,
-                    "test_end": test_end,
-                    "final_equity": test_eq,
-                    "regime": regime
-                }])
-
-                return results
-
-            finally:
-                # Restore original sequence parameters
-                self.preparer.sequence_length = original_sequence_length
-                self.preparer.horizon = original_horizon
-
-        # For larger datasets, use regular walk-forward with smaller step size
-        # Create directory for results if it doesn't exist
+        # Create directory for results
         results_dir = f"EnhancedTrainingResults/Trades"
         os.makedirs(results_dir, exist_ok=True)
 
@@ -562,11 +490,11 @@ class EnhancedStrategyBacktester:
             f.write(
                 "iteration,entry_time,exit_time,direction,entry_price,exit_price,quantity,PnL,entry_signal,exit_signal,regime,stop_loss,take_profit\n")
 
-        # Track summary results (much smaller than storing all trades)
+        # Track summary results
         performance_by_iteration = []
 
-        # Use a smaller step size for small datasets
-        step_size = max(self.test_window_size // 4, 10)  # Overlap windows by 75%, but at least 10 rows
+        # Use appropriate step size for large datasets
+        step_size = self.test_window_size // 2  # 50% overlap between test windows
 
         # Keep track of overall results to return at the end
         all_results = []
@@ -593,7 +521,7 @@ class EnhancedStrategyBacktester:
 
             if len(X_train) == 0:
                 self.logger.warning(f"Insufficient training data in iteration {iteration}")
-                start_idx += step_size  # Use step size instead of full test window
+                start_idx += step_size
                 continue
 
             # Check memory after data preparation
@@ -601,8 +529,24 @@ class EnhancedStrategyBacktester:
 
             # Compute class weights with emphasis on extreme classes
             y_train_flat = np.argmax(y_train, axis=1)
-            class_weights = compute_class_weight('balanced', classes=np.unique(y_train_flat), y=y_train_flat)
-            class_weight_dict = dict(enumerate(class_weights))
+
+            # Get unique classes present in the data
+            unique_classes = np.unique(y_train_flat)
+
+            # Calculate class weights only for classes that exist in the data
+            class_weights = compute_class_weight('balanced', classes=unique_classes, y=y_train_flat)
+
+            # Create weight dictionary mapping class indices to weights
+            class_weight_dict = {cls: weight for cls, weight in zip(unique_classes, class_weights)}
+
+            # Ensure all possible classes have entries in the dictionary
+            for cls in range(5):  # We have 5 classes (0-4)
+                if cls not in class_weight_dict:
+                    # If a class doesn't exist in training data, assign average weight
+                    avg_weight = np.mean(list(class_weight_dict.values())) if class_weight_dict else 1.0
+                    class_weight_dict[cls] = avg_weight
+                    self.logger.warning(
+                        f"Class {cls} not found in training data. Assigned average weight: {avg_weight}")
 
             # Adjust weights based on regime
             if regime == 'trending':
@@ -616,11 +560,12 @@ class EnhancedStrategyBacktester:
             elif regime == 'volatile':
                 # In volatile regimes, all signals matter
                 for i in range(5):
-                    class_weight_dict[i] *= 1.0
+                    if i in class_weight_dict:
+                        class_weight_dict[i] *= 1.0
 
-            # Determine optimal batch size based on data size
-            batch_size = min(256, max(16, len(X_train) // 10))
-            epochs = min(32, max(10, 16 + (len(X_train) // 500)))
+            # Use full batch size for large datasets
+            batch_size = 256
+            epochs = 32
 
             self.logger.info(f"Using batch_size={batch_size}, epochs={epochs} for training")
 

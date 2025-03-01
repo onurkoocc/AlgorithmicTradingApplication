@@ -302,39 +302,18 @@ class EnhancedCryptoModel:
 
     def tune_and_train(self, iteration, X_train, y_train, X_val, y_val, df_val, fwd_returns_val, epochs=32,
                        batch_size=256, class_weight=None):
-        """Train model with automatic adjustment for small datasets"""
+        """Train model without small dataset adjustments"""
         if len(X_train) == 0:
             self.logger.warning("No training data. Skipping tuner.")
             return None, None
-
-        # Check data size and adjust parameters for small datasets
-        if len(X_train) < 500:  # Very small dataset
-            self.logger.info(f"Small dataset detected (X_train size: {len(X_train)}). Adjusting parameters.")
-
-            # Reduce batch size for small datasets to avoid running out of samples
-            original_batch_size = batch_size
-            batch_size = min(batch_size, max(16, len(X_train) // 10))
-
-            # Reduce number of trials to avoid overfitting
-            original_max_trials = self.max_trials
-            self.max_trials = min(self.max_trials, 20)
-
-            # Reduce epochs to avoid overfitting
-            original_epochs = epochs
-            epochs = min(epochs, 16)
-
-            self.logger.info(f"Adjusted parameters: batch_size={original_batch_size}->{batch_size}, "
-                             f"max_trials={original_max_trials}->{self.max_trials}, "
-                             f"epochs={original_epochs}->{epochs}")
 
         input_shape = (X_train.shape[1], X_train.shape[2])
         steps_per_epoch = len(X_train) // batch_size + (1 if len(X_train) % batch_size != 0 else 0)
         total_steps = steps_per_epoch * epochs
         objective = Objective("val_avg_risk_adj_return", direction="max")
 
-        # Choose tuner type based on dataset size
-        if len(X_train) < 300:  # Very small dataset
-            # Use Hyperband for very small datasets (faster convergence)
+        # Use the originally specified tuner type
+        if self.tuner_type.lower() == "hyperband":
             tuner = Hyperband(
                 hypermodel=lambda hp: self._build_model(hp, input_shape, total_steps),
                 objective=objective,
@@ -345,64 +324,33 @@ class EnhancedCryptoModel:
                 overwrite=True,
                 seed=self.seed
             )
-            self.logger.info("Using Hyperband tuner for small dataset")
         else:
-            # Use the originally specified tuner type
-            if self.tuner_type.lower() == "hyperband":
-                tuner = Hyperband(
-                    hypermodel=lambda hp: self._build_model(hp, input_shape, total_steps),
-                    objective=objective,
-                    max_epochs=epochs,
-                    factor=3,
-                    executions_per_trial=1,
-                    project_name=self.project_name,
-                    overwrite=True,
-                    seed=self.seed
-                )
-            else:
-                tuner = BayesianOptimization(
-                    hypermodel=lambda hp: self._build_model(hp, input_shape, total_steps),
-                    objective=objective,
-                    max_trials=self.max_trials,
-                    executions_per_trial=1,
-                    project_name=self.project_name,
-                    overwrite=True,
-                    seed=self.seed
-                )
+            tuner = BayesianOptimization(
+                hypermodel=lambda hp: self._build_model(hp, input_shape, total_steps),
+                objective=objective,
+                max_trials=self.max_trials,
+                executions_per_trial=1,
+                project_name=self.project_name,
+                overwrite=True,
+                seed=self.seed
+            )
 
-        # Adjust early stopping patience based on data size
-        patience = 6
-        if len(X_train) < 300:
-            patience = 3  # Less patience for small datasets to avoid overfitting
-
+        # Standard early stopping with reasonable patience
+        patience = 10
         es = EarlyStopping(monitor='val_avg_risk_adj_return', patience=patience, restore_best_weights=True, mode='max')
         checkpoint = ModelCheckpoint(self.model_save_path, monitor='val_avg_risk_adj_return', save_best_only=True,
-                                     mode='max')
+                                    mode='max')
         callback = RiskAdjustedTradeMetric(X_val, y_val, fwd_returns_val, df_val)
 
-        # Adjust dataset creation based on data size
-        if len(X_train) < 300:
-            # For very small datasets, don't use shuffling to maintain sequence integrity
-            train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)).batch(
-                batch_size).prefetch(tf.data.AUTOTUNE)
-        else:
-            # For larger datasets, shuffle as normal
-            train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(buffer_size=1024,
-                                                                                           seed=self.seed).batch(
-                batch_size).prefetch(tf.data.AUTOTUNE)
+        # Use shuffled dataset with full batch size
+        train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)).shuffle(
+            buffer_size=min(len(X_train), 10000), seed=self.seed).batch(
+            batch_size).prefetch(tf.data.AUTOTUNE)
 
         val_dataset = tf.data.Dataset.from_tensor_slices((X_val, y_val)).batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
-        # For very small datasets, reduce the number of trials drastically
-        if len(X_train) < 200:
-            original_max_trials = self.max_trials
-            self.max_trials = min(5, self.max_trials)
-            tuner.oracle.max_trials = self.max_trials
-            self.logger.info(
-                f"Further reduced max_trials from {original_max_trials} to {self.max_trials} for very small dataset")
-
         tuner.search(train_dataset, validation_data=val_dataset, epochs=epochs, callbacks=[callback, es, checkpoint],
-                     class_weight=class_weight, verbose=2)
+                    class_weight=class_weight, verbose=2)
 
         try:
             best_trial = tuner.oracle.get_best_trials(1)[0]
@@ -410,15 +358,21 @@ class EnhancedCryptoModel:
             self.best_hp = best_hp.values
             self.best_model = tuner.hypermodel.build(best_hp)
 
+            # Fixed the bug with the hyperparameter access
             row = {
-                'iteration': iteration, 'trial_id': best_trial.trial_id, 'learning_rate': best_hp.get('lr'),
-                'total_steps': total_steps, 'conv_filter_0': best_hp.get('conv_filter_0'),
-                'dropout_rate_0': best_hp.get('dropout_rate_0'),
-                'lstm_unit_1': best_hp.get('unit_1'), 'dropout_rate_1': best_hp.get('dropout_rate_1'),
-                'l2_reg_1': best_hp.get('l2_reg_1'),
-                'transformer_blocks': best_hp.get('num_transformer_blocks', 1),
-                'transformer_units': best_hp.get('transformer_units', 64),
-                'num_heads': best_hp.get('num_heads', 4), 'gamma': best_hp.get('gamma'),
+                'iteration': iteration,
+                'trial_id': best_trial.trial_id,
+                'learning_rate': best_hp.values.get('lr'),
+                'total_steps': total_steps,
+                'conv_filter_0': best_hp.values.get('conv_filter_0'),
+                'dropout_rate_0': best_hp.values.get('dropout_rate_0'),
+                'lstm_unit_1': best_hp.values.get('unit_1'),
+                'dropout_rate_1': best_hp.values.get('dropout_rate_1'),
+                'l2_reg_1': best_hp.values.get('l2_reg_1'),
+                'transformer_blocks': best_hp.values.get('num_transformer_blocks', 1),
+                'transformer_units': best_hp.values.get('transformer_units', 64),
+                'num_heads': best_hp.values.get('num_heads', 4),
+                'gamma': best_hp.values.get('gamma'),
                 'val_loss': best_trial.metrics.get_last_value('val_loss'),
                 'val_accuracy': best_trial.metrics.get_last_value('val_accuracy'),
                 'val_weighted_accuracy': best_trial.metrics.get_last_value('val_weighted_accuracy'),
@@ -444,14 +398,14 @@ class EnhancedCryptoModel:
 
                 # Create a simple model with minimal hyperparameters
                 inputs = Input(shape=input_shape, dtype=tf.float32)
-                x = Conv1D(filters=32, kernel_size=3, padding='same', activation='relu')(inputs)
+                x = Conv1D(filters=64, kernel_size=5, padding='same', activation='relu')(inputs)
                 x = BatchNormalization()(x)
-                x = Dropout(rate=0.1)(x)
-                x = Bidirectional(LSTM(32, return_sequences=True, dropout=0.1))(x)
+                x = Dropout(rate=0.2)(x)
+                x = Bidirectional(LSTM(64, return_sequences=True, dropout=0.2))(x)
                 x = BatchNormalization()(x)
                 x = GlobalAveragePooling1D()(x)
-                x = Dense(64, activation="relu")(x)
-                x = Dropout(rate=0.1)(x)
+                x = Dense(128, activation="relu")(x)
+                x = Dropout(rate=0.2)(x)
                 outputs = Dense(self.output_classes, activation="softmax", dtype=tf.float32)(x)
 
                 self.best_model = Model(inputs, outputs)
@@ -471,7 +425,7 @@ class EnhancedCryptoModel:
                 self.best_model.fit(
                     X_train, y_train,
                     validation_data=(X_val, y_val),
-                    epochs=min(10, epochs),
+                    epochs=min(20, epochs),
                     batch_size=batch_size,
                     class_weight=class_weight,
                     callbacks=[es, checkpoint],
@@ -606,7 +560,7 @@ class EnhancedCryptoModel:
         else:
             print(f"No model found at {self.model_save_path}")
 
-    def predict_signals(self, X_new, batch_size=512):
+    def predict_signals(self, X_new, batch_size=256):
         if hasattr(self, 'ensemble_models') and self.ensemble_models:
             preds, _ = self.predict_with_ensemble(X_new, batch_size)
             return preds
