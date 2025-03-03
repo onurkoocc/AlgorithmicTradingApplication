@@ -4,19 +4,34 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="663b4119-c6a5-42f4-9da6-acdb3beb9cd2" name="Changes" comment="last working commit">
-      <change afterPath="$PROJECT_DIR$/monitor.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/optimal_params.json" afterDir="false" />
+    <list default="true" id="663b4119-c6a5-42f4-9da6-acdb3beb9cd2" name="Changes" comment="updated">
+      <change afterPath="$PROJECT_DIR$/.dockerignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.env" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Dockerfile.optimized" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/api_security.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config_unified.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/develop.bat" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/development-workflow.ps1" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/docker-compose.dev.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/memory_tester.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/memory_utils.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/unified_monitor.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/AlgorithmicTradingApplication.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/AlgorithmicTradingApplication.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Dockerfile" beforeDir="false" afterPath="$PROJECT_DIR$/Dockerfile" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/config_override.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/data_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/data_manager.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data_preparation.py" beforeDir="false" afterPath="$PROJECT_DIR$/data_preparation.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/feature_engineering.py" beforeDir="false" afterPath="$PROJECT_DIR$/feature_engineering.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/memory_monitor.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/model_management.py" beforeDir="false" afterPath="$PROJECT_DIR$/model_management.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/monitor.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/startup.sh" beforeDir="false" afterPath="$PROJECT_DIR$/startup.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/temperature_monitor.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/trading_logic.py" beforeDir="false" afterPath="$PROJECT_DIR$/trading_logic.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -59,6 +74,7 @@
   "keyToString": {
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
+    "Shell Script.development-workflow.sh.executor": "Run",
     "git-widget-placeholder": "master",
     "ignore.virus.scanning.warn.message": "true",
     "last_opened_file_path": "C:/Users/kocon/PycharmProjects/AlgoritmicTradingApplication",
@@ -67,7 +83,7 @@
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "preferences.lookFeel",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
@@ -75,6 +91,28 @@
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\kocon\PycharmProjects\AlgoritmicTradingApplication" />
     </key>
+  </component>
+  <component name="RunManager">
+    <configuration name="development-workflow.sh" type="ShConfigurationType" temporary="true">
+      <option name="SCRIPT_TEXT" value="" />
+      <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
+      <option name="SCRIPT_PATH" value="$PROJECT_DIR$/development-workflow.sh" />
+      <option name="SCRIPT_OPTIONS" value="" />
+      <option name="INDEPENDENT_SCRIPT_WORKING_DIRECTORY" value="true" />
+      <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
+      <option name="INTERPRETER_PATH" value="/bin/bash" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="EXECUTE_IN_TERMINAL" value="true" />
+      <option name="EXECUTE_SCRIPT_FILE" value="true" />
+      <envs />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Shell Script.development-workflow.sh" />
+      </list>
+    </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
@@ -93,7 +131,13 @@
       <option name="presentableId" value="Default" />
       <updated>1740773844566</updated>
       <workItem from="1740773845605" duration="12511000" />
-      <workItem from="1740815705848" duration="5678000" />
+      <workItem from="1740815705848" duration="12835000" />
+      <workItem from="1740842715902" duration="3828000" />
+      <workItem from="1740850735498" duration="12545000" />
+      <workItem from="1740875716389" duration="11240000" />
+      <workItem from="1740904138191" duration="25159000" />
+      <workItem from="1740949598234" duration="790000" />
+      <workItem from="1740950440470" duration="11107000" />
     </task>
     <task id="LOCAL-00001" summary="first commit">
       <option name="closed" value="true" />
@@ -135,7 +179,15 @@
       <option name="project" value="LOCAL" />
       <updated>1740816066211</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="updated">
+      <option name="closed" value="true" />
+      <created>1740822118839</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1740822118839</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -147,6 +199,7 @@
     <MESSAGE value="change lookback candles" />
     <MESSAGE value="change lookback candles-2" />
     <MESSAGE value="last working commit" />
-    <option name="LAST_COMMIT_MESSAGE" value="last working commit" />
+    <MESSAGE value="updated" />
+    <option name="LAST_COMMIT_MESSAGE" value="updated" />
   </component>
 </project>

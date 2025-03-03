@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  algorithmic-trading:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: algorithmic-trading-app:latest
+    container_name: algorithmic-trading-container
+    runtime: nvidia
+    stdin_open: true
+    tty: true
+    volumes:
+      # Data and results directories
+      - "C:/Users/kocon/PycharmProjects/AlgorithmicTradingApplication/data:/app/data"
+      - "C:/Users/kocon/PycharmProjects/AlgorithmicTradingApplication/EnhancedTrainingResults:/app/EnhancedTrainingResults"
+      # Source code directory for continuous development
+      - "C:/Users/kocon/PycharmProjects/AlgorithmicTradingApplication:/app/src"
+      # Mount specific Python files directly to override the container's versions
+      - "C:/Users/kocon/PycharmProjects/AlgorithmicTradingApplication/main.py:/app/main.py"
+      - "C:/Users/kocon/PycharmProjects/AlgorithmicTradingApplication/data_manager.py:/app/data_manager.py"
+      - "C:/Users/kocon/PycharmProjects/AlgorithmicTradingApplication/model_management.py:/app/model_management.py"
+      - "C:/Users/kocon/PycharmProjects/AlgorithmicTradingApplication/feature_engineering.py:/app/feature_engineering.py"
+      - "C:/Users/kocon/PycharmProjects/AlgorithmicTradingApplication/trading_logic.py:/app/trading_logic.py"
+      - "C:/Users/kocon/PycharmProjects/AlgorithmicTradingApplication/memory_utils.py:/app/memory_utils.py"
+    environment:
+      - BINANCE_API_KEY=XW2qoCu1zlZdA8FEW98y7Md55ZtJ7fpaV1un6QkZErMeHIY7VXYAY5J6FonVTUdy
+      - BINANCE_API_SECRET=ivuwpI0yYRPRvSrex0IHGLcF4QP6jWTcUMCsWJ0DSQ3retcwOSTcmm9yzB1PFaP2
+      - CRYPTO_SYSTEM_GPU_MEMORY_LIMIT_PCT=65
+      - TF_ENABLE_XLA=1
+      - TF_ENABLE_ONEDNN_OPTS=1
+      - OPTIMIZE_FOR_RTX_4070=1
+    deploy:
+      resources:
+        limits:
+          cpus: '14'
+          memory: 50G
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+    shm_size: 8g
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    mem_limit: 50g
+    memswap_limit: 55g
+    entrypoint: ["/bin/bash"]
+    command: ["/app/startup.sh"]

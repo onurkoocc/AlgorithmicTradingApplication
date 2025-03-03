@@ -5,12 +5,14 @@ import numpy as np
 from datetime import datetime, timedelta
 from binance.um_futures import UMFutures
 from binance.error import ClientError
-from config import Config
+from config_unified import get_config
+from api_security import get_api_credentials
 
 ###############################################################################
 # DATA FETCHING CLASS
 ###############################################################################
 class BitcoinData:
+    # Then modify the BitcoinData.__init__ method:
     def __init__(self, csv_30m='btc_data_30m.csv', csv_4h='btc_data_4h.csv',
                  csv_daily='btc_data_daily.csv', csv_oi='btc_open_interest.csv',
                  csv_funding='btc_funding_rates.csv',
@@ -19,10 +21,17 @@ class BitcoinData:
         """
         Initialize with Binance Futures API client and file paths
         """
+        # Load API keys securely
+        api_key, api_secret = get_api_credentials()
+
+        # Initialize config properly - this creates the TradingConfig instance
+        # with both lowercase and uppercase parameter access
+        self.config = get_config("trading_config.json")
+
         # Initialize UMFutures client for USDT-margined futures
         self.client = UMFutures(
-            key=os.getenv("BINANCE_API_KEY", ""),
-            secret=os.getenv("BINANCE_API_SECRET", ""),
+            key=api_key or os.getenv("BINANCE_API_KEY", ""),
+            secret=api_secret or os.getenv("BINANCE_API_SECRET", ""),
             base_url=base_url,
             timeout=timeout
         )
@@ -44,6 +53,7 @@ class BitcoinData:
 
     def fetch_30m_data(self, live=False) -> pd.DataFrame:
         """Fetch 30-minute data from file or Binance API with pagination to get full history"""
+        config = self.config
         if os.path.exists(self.csv_30m) and not live:
             self.logger.info(f"Loading 30m data from {self.csv_30m}")
             return self._read_csv_with_numeric(self.csv_30m)
@@ -52,8 +62,10 @@ class BitcoinData:
         try:
             # Calculate start time in milliseconds
             start_time = None
-            lookback_candles = Config.LOOKBACK_30M_CANDLES
-            if hasattr(Config, 'LOOKBACK_30M_CANDLES'):
+            # Use lowercase or get method for consistent access
+            lookback_candles = config.get("lookback_30m_candles", 8000)
+
+            if hasattr(config, 'lookback_30m_candles'):
                 start_time = int((datetime.now().timestamp() - (lookback_candles * 30 * 60)) * 1000)
 
             # For storing all collected klines
@@ -134,8 +146,11 @@ class BitcoinData:
                 self.logger.info(f"Using existing {self.csv_30m} as fallback")
                 return self._read_csv_with_numeric(self.csv_30m)
             raise
+
     def fetch_open_interest(self, live=False) -> pd.DataFrame:
         """Fetch open interest data from file or Binance API"""
+        config = self.config
+
         if os.path.exists(self.csv_oi) and not live:
             self.logger.info(f"Loading open interest data from {self.csv_oi}")
             return pd.read_csv(self.csv_oi, index_col='timestamp', parse_dates=True)
@@ -147,7 +162,10 @@ class BitcoinData:
             end_time = int(datetime.now().timestamp() * 1000) if live else None
 
             # We need to make multiple API calls to get enough history
-            for _ in range(int(np.ceil(Config.LOOKBACK_30M_CANDLES / limit))):
+            # Use lowercase lookback_30m_candles for consistent access
+            lookback_candles = config.get("lookback_30m_candles", 8000)
+
+            for _ in range(int(np.ceil(lookback_candles / limit))):
                 params = {
                     "symbol": "BTCUSDT",
                     "period": "30m",  # Match our candle timeframe
@@ -245,6 +263,8 @@ class BitcoinData:
 
     def fetch_funding_rates(self, live=False) -> pd.DataFrame:
         """Fetch funding rate history from file or Binance API with improved error handling"""
+        config = self.config
+
         if os.path.exists(self.csv_funding) and not live:
             self.logger.info(f"Loading funding rate data from {self.csv_funding}")
             return pd.read_csv(self.csv_funding, index_col='timestamp', parse_dates=True)
@@ -353,7 +373,7 @@ class BitcoinData:
             # Use 'h' instead of 'H' to avoid deprecation warning
             dates = pd.date_range(
                 end=datetime.now(),
-                periods=Config.LOOKBACK_30M_CANDLES // 16,
+                periods=config.LOOKBACK_30M_CANDLES // 16,
                 freq='8h'  # lowercase h
             )
 
@@ -378,7 +398,7 @@ class BitcoinData:
             self.logger.warning("Creating fallback funding rate data")
             dates = pd.date_range(
                 end=datetime.now(),
-                periods=Config.LOOKBACK_30M_CANDLES // 16,
+                periods=config.LOOKBACK_30M_CANDLES // 16,
                 freq='8h'  # Use lowercase 'h' to avoid deprecation warning
             )
 
@@ -393,6 +413,8 @@ class BitcoinData:
 
     def derive_4h_data(self, df_30m) -> pd.DataFrame:
         """Derive 4-hour data from 30-minute data using resampling"""
+        config = self.config
+
         # Create a copy to avoid modifying the original DataFrame
         df_30m_copy = df_30m.copy()
 
@@ -416,8 +438,11 @@ class BitcoinData:
 
         # Ensure we have the right number of candles
         # If we need specific number of candles:
-        if len(df_4h) > Config.LOOKBACK_4H_CANDLES:
-            df_4h = df_4h.iloc[-Config.LOOKBACK_4H_CANDLES:]
+        # Use config.get() to access configuration parameters
+        lookback_4h_candles = config.get("lookback_4h_candles", 1200)
+
+        if len(df_4h) > lookback_4h_candles:
+            df_4h = df_4h.iloc[-lookback_4h_candles:]
 
         # Optionally save to CSV
         df_4h.to_csv(self.csv_4h, index=True)
@@ -428,6 +453,8 @@ class BitcoinData:
     def derive_daily_data(self, df_30m) -> pd.DataFrame:
         """Derive daily data from 30-minute data using resampling"""
         # Create a copy to avoid modifying the original DataFrame
+        config = self.config
+
         df_30m_copy = df_30m.copy()
 
         # Ensure the index is datetime and sorted
@@ -449,8 +476,11 @@ class BitcoinData:
         df_daily = df_daily.dropna()
 
         # Ensure we have the right number of candles
-        if len(df_daily) > Config.LOOKBACK_DAILY_CANDLES:
-            df_daily = df_daily.iloc[-Config.LOOKBACK_DAILY_CANDLES:]
+        # Use config.get() for consistent access
+        lookback_daily_candles = config.get("lookback_daily_candles", 200)
+
+        if len(df_daily) > lookback_daily_candles:
+            df_daily = df_daily.iloc[-lookback_daily_candles:]
 
         # Optionally save to CSV
         df_daily.to_csv(self.csv_daily, index=True)

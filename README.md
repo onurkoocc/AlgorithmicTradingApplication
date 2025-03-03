@@ -1,115 +1,127 @@
-# Enhanced Crypto Trading System
+# Memory Optimization for Crypto Trading System
 
-A modular, ML-powered cryptocurrency trading system with feature engineering, deep learning models, and advanced risk management.
+This document outlines the memory optimization improvements made to the Enhanced Crypto Trading System to ensure it runs efficiently on the specified hardware.
 
-## System Architecture
+## System Specifications
 
-The system is divided into six main modules:
+- **CPU**: Intel® Core™ Ultra 7 155H 16C/22T
+- **GPU**: NVIDIA® GeForce® RTX4070 Max-Performance 8GB GDDR6
+- **RAM**: 64GB DDR5 5600MHz
+- **Storage**: 1TB M.2 SSD PCIe 4.0 x4
+- **Environment**: Windows 11, Docker Container, CUDA 12.5, Python 3.11
 
-1. **config.py** - Environment setup & global configurations
-   - TensorFlow optimization
-   - Memory management
-   - System monitoring
+## Key Optimization Components
 
-2. **data_manager.py** - Data fetching and processing
-   - Binance API integration
-   - Multi-timeframe data handling (30m, 4h, daily)
-   - Open interest and funding rates
+### 1. Memory Management Utilities (`memory_utils.py`)
 
-3. **feature_engineering.py** - Feature creation and engineering
-   - Technical indicators across timeframes
-   - Market regime detection
-   - Volume profile analysis
-   - Swing detection
+- **Memory Monitoring**: Continuous background monitoring of RAM and GPU memory
+- **Cleanup Levels**: Three-tiered cleanup system (light, standard, aggressive)
+- **GPU Optimization**: Configuration for RTX 4070 8GB GPU with memory growth limits
+- **Mixed Precision**: Automatic float16 mixed precision for improved GPU performance
+- **Temperature Monitoring**: GPU temperature tracking with automatic throttling
+- **DataFrame Optimization**: Utilities to minimize pandas DataFrame memory usage
 
-4. **data_preparation.py** - Data preparation for ML
-   - Sequence building for time series
-   - Train/validation splitting
-   - Feature normalization
-   - Label creation
+### 2. Feature Engineering Improvements (`feature_engineering_optimized.py`)
 
-5. **model_management.py** - ML models and training
-   - Custom model architecture with transformer blocks
-   - Hyperparameter optimization
-   - Model ensemble training
-   - Trading-specific metrics
+- **Strategic Memory Checkpoints**: Placed at critical points in feature calculation
+- **Chunked Processing**: Option to process data in smaller chunks (configurable size)
+- **Zero Matrix Prevention**: Detection and handling of constant columns
+- **Adaptive Feature Selection**: Under memory pressure, selects only most important features
+- **Data Type Optimization**: Automatic conversion of float64 to float32 when possible
 
-6. **trading_logic.py** - Signal generation and backtesting
-   - Advanced risk management
-   - Dynamic entry/exit strategies
-   - Multi-timeframe signal confirmation
-   - Walk-forward backtesting
+### 3. Trading Logic Refactoring (`trading_logic_optimized.py`)
 
-7. **main.py** - Main entry point and orchestration
+- **Modular Design**: Separated signal generation from trade execution
+- **Memory-Efficient Backtesting**: Improved walk-forward testing with configurable window sizes
+- **Direct-to-Disk Results**: Saves trades to disk instead of keeping everything in memory
+- **Signal Producer Classes**: Better organization of market analysis components
+- **Adaptive Parameters**: Scaling of risk parameters based on available memory
 
-## Prerequisites
+### 4. Enhanced Main Script (`main_optimized.py`)
 
-- Python 3.8+
-- TensorFlow 2.x
-- Binance account and API keys
+- **Graceful Degradation**: Dynamically adjusts parameters based on available memory
+- **Robust Error Handling**: Better error recovery and reporting
+- **Enhanced Configuration**: Improved handling of user configuration with defaults
+- **Memory-Aware Execution**: Adjusts workload based on system resources
+- **Improved Logging**: More detailed logging of memory usage and system state
 
-## Installation
+### 5. Startup Optimizations (`startup_optimized.sh`)
 
-1. Clone this repository
-2. Install the required packages:
+- **GPU Configuration**: Proper TensorFlow setup for RTX 4070 GPU
+- **Environment Variables**: Sets key variables for optimal performance
+- **Automatic Directory Creation**: Creates required directory structure
+- **Post-Run Cleanup**: Final memory cleanup after execution
+
+## How to Use the Optimized System
+
+1. **Preparation**:
+   ```bash
+   # Extract the optimization files
+   cp memory_utils_enhanced.py memory_utils.py
+   cp feature_engineering_optimized.py feature_engineering.py
+   cp trading_logic_optimized.py trading_logic.py
+   cp main_optimized.py main.py
+   chmod +x startup_optimized.sh
    ```
-   pip install tensorflow keras-tuner pandas numpy matplotlib binance-futures-connector sklearn scipy
+
+2. **Running with Docker**:
+   ```bash
+   # Use the optimized startup script
+   docker run -it --gpus all -v $(pwd):/app crypto-trading:latest /app/startup_optimized.sh
    ```
-3. Set your Binance API keys (in the code or as environment variables)
 
-## Usage
+3. **Monitoring Memory Usage**:
+   ```bash
+   # View memory logs
+   cat EnhancedTrainingResults/MemoryLog/memory_log.csv
+   
+   # View GPU logs
+   cat EnhancedTrainingResults/MemoryLog/gpu_log.csv
+   ```
 
-### Basic Usage
+## Memory Optimization Testing
 
-Run the system with default settings:
+The system includes a dedicated memory optimization testing script (`test_memory_optimization.py`) that allows you to:
 
-```python
-python main.py
+1. Test data fetching with memory profiling
+2. Evaluate feature engineering memory efficiency
+3. Analyze data preparation memory impact
+4. Stress test the entire pipeline
+
+```bash
+# Run the memory test script
+python3 test_memory_optimization.py
+
+# Options:
+# --live             Use live data instead of cached data
+# --no-chunks        Process data without chunking
+# --chunk-size INT   Size of chunks for processing (default: 1000)
+# --subsample INT    Use subsample of data for preparation test
 ```
 
-This will:
-1. Fetch Bitcoin USDT-futures data from Binance
-2. Process and engineer features
-3. Train a deep learning model
-4. Perform walk-forward backtesting
-5. Output trading results
+## Configuration Options
 
-### Configuration Options
+The system now supports additional memory-specific configuration parameters:
 
-You can modify key parameters in `main.py`:
-
-- Change `backtest=True` to `backtest=False` for live trading mode
-- Adjust risk parameters in `AdvancedRiskManager`
-- Modify signal thresholds in `EnhancedSignalProducer`
-- Change model parameters in `EnhancedCryptoModel`
-
-### Multiple Configuration Testing
-
-To compare different trading configurations:
-
-```python
-# In main.py, comment out single run and uncomment:
-# run_system_with_multiple_configs()
+```json
+{
+  "system": {
+    "memory_threshold_gb": 24,
+    "gpu_memory_limit_pct": 65,
+    "chunk_size": 1000,
+    "use_chunking": true
+  }
+}
 ```
 
-## System Outputs
+## Tips for Maximum Performance
 
-- Trading signals and performance metrics
-- Detailed backtest logs in `EnhancedTrainingResults/`
-- Performance comparison between configurations
-- Model artifacts for reuse
+1. **Use Chunked Processing**: Enable `use_chunking` for large datasets
+2. **Adjust Sequence Length**: For large datasets, use shorter sequence lengths (16-24)
+3. **Limit Training Epochs**: Use fewer epochs (5-10) for model training
+4. **Ensemble Size**: Use single models instead of ensembles for memory efficiency
+5. **Mixed Precision**: Keep mixed precision enabled for significant memory savings
+6. **Monitor Temperature**: Watch GPU temperature logs to avoid thermal throttling
+7. **Regular Testing**: Run the memory test script regularly to identify bottlenecks
 
-## Memory and Temperature Monitoring
-
-The system includes utilities to monitor:
-- RAM usage to prevent out-of-memory errors
-- GPU temperature to prevent overheating
-- Automatic throttling when thresholds are exceeded
-
-## License
-
-This project is provided for educational purposes only. Use at your own risk.
-
-## Disclaimer
-
-Trading cryptocurrencies involves significant risk of loss. This software is for educational purposes only and should not be used for actual trading without extensive testing and customization.
+This optimized system should run efficiently on your hardware configuration while maintaining the core functionality of the original system.
